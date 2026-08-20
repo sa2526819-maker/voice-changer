@@ -1,24 +1,26 @@
 #include <jni.h>
 #include <oboe/Oboe.h>
 #include <vector>
+#include <cmath>
 
 using namespace oboe;
 
-class VoiceEngine : public AudioStreamDataCallback {
+class HindiVoiceEngine : public AudioStreamDataCallback {
 public:
     AudioStream *recordingStream = nullptr;
-    AudioStream *playbackStream = nullptr;
     
-    float pitchShift = 1.32f; 
+    // Hindi Female Tone Calibration
+    const float PITCH_FACTOR = 1.34f;
+    const float FORMANT_WARP = 1.18f;
 
     void start() {
         AudioStreamBuilder inBuilder;
-
         inBuilder.setDirection(Direction::Input)
                  ->setPerformanceMode(PerformanceMode::LowLatency)
                  ->setSharingMode(SharingMode::Exclusive)
                  ->setFormat(AudioFormat::Float)
                  ->setChannelCount(1)
+                 ->setSampleRate(48000)
                  ->setDataCallback(this)
                  ->openStream(&recordingStream);
 
@@ -29,10 +31,16 @@ public:
         float *buffer = static_cast<float *>(audioData);
 
         for (int i = 0; i < numFrames; i++) {
-            float sample = buffer[i] * pitchShift;
-            if (sample > 1.0f) sample = 1.0f;
-            if (sample < -1.0f) sample = -1.0f;
-            buffer[i] = sample;
+            float sample = buffer[i];
+
+            // Formant & Resonance balance
+            float warped = sample * FORMANT_WARP;
+            float processed = std::sin(warped * PITCH_FACTOR * 1.5707963f);
+
+            if (processed > 0.95f) processed = 0.95f;
+            if (processed < -0.95f) processed = -0.95f;
+
+            buffer[i] = processed;
         }
 
         return DataCallbackResult::Continue;
@@ -46,7 +54,7 @@ public:
     }
 };
 
-static VoiceEngine engine;
+static HindiVoiceEngine engine;
 
 extern "C" {
     JNIEXPORT void JNICALL Java_com_game_voicechanger_VoiceService_startVoiceEngine(JNIEnv *env, jobject thiz) {
